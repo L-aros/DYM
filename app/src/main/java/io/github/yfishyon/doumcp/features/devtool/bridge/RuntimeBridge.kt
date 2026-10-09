@@ -322,12 +322,19 @@ object RuntimeBridge {
         if (special && staticContext) throw IllegalStateException("静态上下文不能做非虚调用（special）")
         val owner = if (staticContext) target as Class<*> else target.javaClass
         val items = args ?: JsonArray(emptyList())
-        var candidates = TargetResolver.methodsOf(owner).filter { it.name == method }
-        if (candidates.isEmpty()) throw IllegalStateException("方法不存在: ${owner.name}.$method")
-        if (argTypes != null) {
-            candidates = candidates.filter { it.matchParams(argTypes) }
-        } else {
-            candidates = candidates.filter { it.parameterCount == items.size }
+        val byName = TargetResolver.methodsOf(owner).filter { it.name == method }
+        if (byName.isEmpty()) throw IllegalStateException("方法不存在: ${owner.name}.$method")
+        var candidates =
+            if (argTypes != null) {
+                byName.filter { it.matchParams(argTypes) }
+            } else {
+                byName.filter { it.parameterCount == items.size }
+            }
+        // 参数过滤后为空先报参数不匹配（带全部候选签名）；否则静态上下文会把真实原因吞成「不能调实例方法」
+        if (candidates.isEmpty()) {
+            throw IllegalStateException(
+                "参数不匹配: ${owner.name}.$method，候选：${byName.joinToString("; ") { it.signatureText() }}",
+            )
         }
         if (staticContext) {
             val staticOnly = candidates.filter { Modifier.isStatic(it.modifiers) }
@@ -335,13 +342,6 @@ object RuntimeBridge {
                 throw IllegalStateException("静态上下文不能调实例方法: ${owner.name}.$method（请给出对象路径或句柄）")
             }
             candidates = staticOnly
-        }
-        if (candidates.isEmpty()) {
-            throw IllegalStateException(
-                "参数不匹配: ${owner.name}.$method，候选：${
-                    TargetResolver.methodsOf(owner).filter { it.name == method }.joinToString("; ") { it.signatureText() }
-                }",
-            )
         }
 
         var lastError: Throwable? = null

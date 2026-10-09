@@ -1,13 +1,20 @@
 package io.github.yfishyon.doumcp.features.devtool.tool
 
 import io.github.yfishyon.doumcp.core.addDouMcpTool
+import io.github.yfishyon.doumcp.core.anyProp
 import io.github.yfishyon.doumcp.core.boolArg
+import io.github.yfishyon.doumcp.core.boolProp
 import io.github.yfishyon.doumcp.core.errorResult
+import io.github.yfishyon.doumcp.core.inputSchema
 import io.github.yfishyon.doumcp.core.intArg
 import io.github.yfishyon.doumcp.core.intArgOrNull
+import io.github.yfishyon.doumcp.core.intProp
 import io.github.yfishyon.doumcp.core.jsonArg
+import io.github.yfishyon.doumcp.core.objectProp
 import io.github.yfishyon.doumcp.core.stringArg
+import io.github.yfishyon.doumcp.core.stringArrayProp
 import io.github.yfishyon.doumcp.core.stringListArgOrNull
+import io.github.yfishyon.doumcp.core.stringProp
 import io.github.yfishyon.doumcp.core.toolCall
 import io.github.yfishyon.doumcp.features.devtool.bridge.WatchBridge
 import io.modelcontextprotocol.kotlin.sdk.server.Server
@@ -23,6 +30,26 @@ import kotlinx.serialization.json.JsonObject
 internal fun Server.registerDevtoolWatchTools() {
     addDouMcpTool(
         name = "watchMethod",
+        schema =
+            inputSchema(
+                properties =
+                    mapOf(
+                        "class" to stringProp(),
+                        "method" to stringProp(),
+                        "paramTypes" to stringArrayProp(),
+                        "kind" to stringProp(),
+                        "captureStack" to boolProp(),
+                        "stackDepth" to intProp(),
+                        "maxCalls" to intProp(),
+                        "condition" to objectProp(),
+                        "exceptionMode" to stringProp(),
+                        "priority" to intProp(),
+                        "argOverrides" to objectProp(),
+                        "returnOverride" to anyProp(),
+                        "thisOverride" to anyProp(),
+                    ),
+                required = listOf("class"),
+            ),
         description =
             "给宿主方法挂 hook，记录每次调用的参数、返回值/异常与耗时（可选调用栈）。" +
                 "参数：class、method（kind=method 时必填）、paramTypes（可选，参数类型名数组，用于重载消歧）、" +
@@ -105,6 +132,16 @@ internal fun Server.registerDevtoolWatchTools() {
 
     addDouMcpTool(
         name = "deoptimize",
+        schema =
+            inputSchema(
+                properties =
+                    mapOf(
+                        "class" to stringProp(),
+                        "method" to stringProp(),
+                        "paramTypes" to stringArrayProp(),
+                    ),
+                required = listOf("class", "method"),
+            ),
         description =
             "反内联，保证已挂的 hook 一定命中（短方法被内联时回调不触发）。" +
                 "按 DexKit 的调用关系找出该方法的全部调用方并逐个反内联（A 内联了 B 时要反内联 A）。" +

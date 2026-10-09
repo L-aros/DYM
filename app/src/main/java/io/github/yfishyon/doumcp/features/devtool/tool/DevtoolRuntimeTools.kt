@@ -1,13 +1,21 @@
 package io.github.yfishyon.doumcp.features.devtool.tool
 
 import io.github.yfishyon.doumcp.core.addDouMcpTool
+import io.github.yfishyon.doumcp.core.anyArrayProp
+import io.github.yfishyon.doumcp.core.anyProp
 import io.github.yfishyon.doumcp.core.boolArg
+import io.github.yfishyon.doumcp.core.boolProp
 import io.github.yfishyon.doumcp.core.errorResult
+import io.github.yfishyon.doumcp.core.inputSchema
 import io.github.yfishyon.doumcp.core.intArg
+import io.github.yfishyon.doumcp.core.intProp
 import io.github.yfishyon.doumcp.core.jsonArg
+import io.github.yfishyon.doumcp.core.objectProp
 import io.github.yfishyon.doumcp.core.stringArg
+import io.github.yfishyon.doumcp.core.stringArrayProp
 import io.github.yfishyon.doumcp.core.stringListArg
 import io.github.yfishyon.doumcp.core.stringListArgOrNull
+import io.github.yfishyon.doumcp.core.stringProp
 import io.github.yfishyon.doumcp.core.toolCall
 import io.github.yfishyon.doumcp.features.devtool.bridge.RuntimeBridge
 import io.modelcontextprotocol.kotlin.sdk.server.Server
@@ -132,6 +140,18 @@ internal fun Server.registerDevtoolRuntimeTools() {
 
     addDouMcpTool(
         name = "writeField",
+        schema =
+            inputSchema(
+                properties =
+                    mapOf(
+                        "path" to stringProp(),
+                        "handle" to stringProp(),
+                        "field" to stringProp(),
+                        "value" to anyProp(),
+                        "force" to boolProp(),
+                    ),
+                required = listOf("field"),
+            ),
         description =
             "写一个字段（按字段类型转换值，可传表达式）。参数：path 或 handle、field、value（表达式或标量）、" +
                 "force（默认 false；true 时尝试去掉 final 再写）。会真实改变宿主状态，后果自负",
@@ -152,6 +172,15 @@ internal fun Server.registerDevtoolRuntimeTools() {
 
     addDouMcpTool(
         name = "newInstance",
+        schema =
+            inputSchema(
+                properties =
+                    mapOf(
+                        "class" to stringProp(),
+                        "args" to anyArrayProp(),
+                    ),
+                required = listOf("class"),
+            ),
         description =
             "构造一个宿主对象，返回对象句柄（obj:N），后续可用 {\"handle\":\"obj:N\"} 传给别的工具。" +
                 "参数：class（类全名）、args（参数数组，元素是表达式或标量；表达式见 invokeMethod 说明）",
@@ -164,6 +193,21 @@ internal fun Server.registerDevtoolRuntimeTools() {
 
     addDouMcpTool(
         name = "invokeMethod",
+        schema =
+            inputSchema(
+                properties =
+                    mapOf(
+                        "path" to stringProp(),
+                        "handle" to stringProp(),
+                        "method" to stringProp(),
+                        "args" to anyArrayProp(),
+                        "argTypes" to stringArrayProp(),
+                        "asHandle" to boolProp(),
+                        "special" to boolProp(),
+                        "chain" to stringProp(),
+                    ),
+                required = listOf("method"),
+            ),
         description =
             "反射调用方法。参数：path 或 handle（path 为类名调静态方法，为对象路径/句柄调实例方法）、method（方法名）、" +
                 "args（参数数组）、argTypes（可选，参数类型名数组，用于重载消歧）、asHandle（默认 false；true 时对象结果入句柄表）、" +
@@ -193,6 +237,15 @@ internal fun Server.registerDevtoolRuntimeTools() {
 
     addDouMcpTool(
         name = "dynamicProxy",
+        schema =
+            inputSchema(
+                properties =
+                    mapOf(
+                        "interfaces" to stringArrayProp(),
+                        "returns" to objectProp(),
+                    ),
+                required = listOf("interfaces"),
+            ),
         description =
             "用 java.lang.reflect.Proxy 造一个接口实现，返回句柄，可当作回调参数传进别的方法。" +
                 "参数：interfaces（接口全名数组，至少一个）、returns（可选对象：方法名 → 返回值表达式；" +

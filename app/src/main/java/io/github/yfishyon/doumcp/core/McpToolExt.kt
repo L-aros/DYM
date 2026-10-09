@@ -2,7 +2,21 @@ package io.github.yfishyon.doumcp.core
 
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+
+/**
+ * 客户端把对象/数组参数压成字符串时的兜底：字符串内容能解析成 JSON 对象/数组就按解析结果取。
+ * 只对结构化取参（jsonArg / *ListArg）生效；stringArg 保持原样（字符串参数的值长得像 JSON 也是字符串）。
+ */
+private fun unwrapStringified(element: JsonElement?): JsonElement? {
+    if (element !is JsonPrimitive || !element.isString) return element
+    val text = element.content.trim()
+    if (!text.startsWith("{") && !text.startsWith("[")) return element
+    return runCatching { Json.parseToJsonElement(text) }.getOrDefault(element)
+}
 
 /** 取字符串参数（缺失返回 null；JSON null 视为缺失，不返回字符串 "null"） */
 internal fun Map<String, kotlinx.serialization.json.JsonElement>?.stringArg(name: String): String? =
@@ -29,29 +43,29 @@ internal fun Map<String, kotlinx.serialization.json.JsonElement>?.intArgOrNull(n
 
 /** 取字符串数组参数（缺失或类型不符返回空列表，元素非字符串的忽略） */
 internal fun Map<String, kotlinx.serialization.json.JsonElement>?.stringListArg(name: String): List<String> =
-    (this?.get(name) as? kotlinx.serialization.json.JsonArray)
+    (unwrapStringified(this?.get(name)) as? JsonArray)
         ?.mapNotNull { (it as? JsonPrimitive)?.takeUnless { p -> p is kotlinx.serialization.json.JsonNull }?.content }
         ?: emptyList()
 
 /** 取字符串数组参数；缺失返回 null（用于区分「未提供」与「空数组」） */
 internal fun Map<String, kotlinx.serialization.json.JsonElement>?.stringListArgOrNull(name: String): List<String>? =
-    (this?.get(name) as? kotlinx.serialization.json.JsonArray)
+    (unwrapStringified(this?.get(name)) as? JsonArray)
         ?.mapNotNull { (it as? JsonPrimitive)?.takeUnless { p -> p is kotlinx.serialization.json.JsonNull }?.content }
 
 /** 取可空字符串数组参数：JSON 的 null 元素保留为真正的 null（用于 params 通配等语义） */
 internal fun Map<String, kotlinx.serialization.json.JsonElement>?.nullableStringListArg(name: String): List<String?>? =
-    (this?.get(name) as? kotlinx.serialization.json.JsonArray)
+    (unwrapStringified(this?.get(name)) as? JsonArray)
         ?.map { element -> if (element is kotlinx.serialization.json.JsonNull) null else (element as? JsonPrimitive)?.content }
 
 /** 取数字数组参数（元素按整数优先解析） */
 internal fun Map<String, kotlinx.serialization.json.JsonElement>?.numberListArg(name: String): List<Number> =
-    (this?.get(name) as? kotlinx.serialization.json.JsonArray)
+    (unwrapStringified(this?.get(name)) as? JsonArray)
         ?.mapNotNull { (it as? JsonPrimitive)?.content?.toNumberOrNull() }
         ?: emptyList()
 
 /** 取原始 JSON 参数（对象/数组/标量原样返回） */
 internal fun Map<String, kotlinx.serialization.json.JsonElement>?.jsonArg(name: String): kotlinx.serialization.json.JsonElement? =
-    this?.get(name)
+    unwrapStringified(this?.get(name))
 
 private fun String.toNumberOrNull(): Number? = toLongOrNull() ?: toDoubleOrNull()
 

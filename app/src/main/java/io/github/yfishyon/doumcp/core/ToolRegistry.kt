@@ -4,6 +4,7 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.JsonObject
 import java.util.concurrent.ConcurrentHashMap
 
@@ -35,12 +36,17 @@ object ToolRegistry {
         )
 }
 
-/** 注册工具：挂到 MCP 端点，同时进入 REST 可调用表。 */
+/** 注册工具：挂到 MCP 端点，同时进入 REST 可调用表。schema 声明参数类型（见 inputSchema）。 */
 internal fun Server.addDouMcpTool(
     name: String,
     description: String,
+    schema: ToolSchema? = null,
     handler: suspend (CallToolRequest) -> CallToolResult,
 ) {
     ToolRegistry.register(name, handler)
-    addTool(name, description) { request -> handler(request) }
+    if (schema != null) {
+        addTool(name, description, schema) { request -> handler(request) }
+    } else {
+        addTool(name, description) { request -> handler(request) }
+    }
 }

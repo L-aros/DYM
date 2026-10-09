@@ -2,13 +2,20 @@ package io.github.yfishyon.doumcp.features.devtool.tool
 
 import io.github.yfishyon.doumcp.core.addDouMcpTool
 import io.github.yfishyon.doumcp.core.boolArg
+import io.github.yfishyon.doumcp.core.boolProp
 import io.github.yfishyon.doumcp.core.errorResult
+import io.github.yfishyon.doumcp.core.inputSchema
 import io.github.yfishyon.doumcp.core.intArgOrNull
+import io.github.yfishyon.doumcp.core.intProp
 import io.github.yfishyon.doumcp.core.jsonArg
 import io.github.yfishyon.doumcp.core.nullableStringListArg
+import io.github.yfishyon.doumcp.core.numberArrayProp
 import io.github.yfishyon.doumcp.core.numberListArg
+import io.github.yfishyon.doumcp.core.objectProp
 import io.github.yfishyon.doumcp.core.stringArg
+import io.github.yfishyon.doumcp.core.stringArrayProp
 import io.github.yfishyon.doumcp.core.stringListArg
+import io.github.yfishyon.doumcp.core.stringProp
 import io.github.yfishyon.doumcp.core.toolCall
 import io.github.yfishyon.doumcp.features.devtool.bridge.DexSearchBridge
 import io.modelcontextprotocol.kotlin.sdk.server.Server
@@ -44,6 +51,40 @@ internal fun Server.registerDevtoolSearchTools() {
 
     addDouMcpTool(
         name = "findClasses",
+        schema =
+            inputSchema(
+                properties =
+                    mapOf(
+                        "name" to stringProp(),
+                        "nameMatch" to stringProp(),
+                        "package" to stringProp(),
+                        "excludePackage" to stringProp(),
+                        "superClass" to stringProp(),
+                        "interface" to stringProp(),
+                        "source" to stringProp(),
+                        "annotation" to stringProp(),
+                        "modifiers" to intProp(),
+                        "modifiersExact" to boolProp(),
+                        "accessFlags" to intProp(),
+                        "accessFlagsExact" to boolProp(),
+                        "fieldName" to stringProp(),
+                        "fieldType" to stringProp(),
+                        "methodName" to stringProp(),
+                        "methodReturn" to stringProp(),
+                        "methodParams" to stringArrayProp(nullableItems = true),
+                        "usingStrings" to stringArrayProp(),
+                        "usingStringMatch" to stringProp(),
+                        "excludeStrings" to stringArrayProp(),
+                        "methodCountMin" to intProp(),
+                        "methodCountMax" to intProp(),
+                        "fieldCountMin" to intProp(),
+                        "fieldCountMax" to intProp(),
+                        "interfaceCountMin" to intProp(),
+                        "interfaceCountMax" to intProp(),
+                        "first" to boolProp(),
+                        "limit" to intProp(),
+                    ),
+            ),
         description =
             "按结构或字符串锚点搜类（DexKit）。至少需要一个条件，或用 package / excludePackage 限定范围（只给 package 即列出整包含子包的类）。" +
                 "参数：name（类名匹配，配 nameMatch）、package / excludePackage、superClass、interface（全等）、" +
@@ -99,6 +140,40 @@ internal fun Server.registerDevtoolSearchTools() {
 
     addDouMcpTool(
         name = "findMethods",
+        schema =
+            inputSchema(
+                properties =
+                    mapOf(
+                        "name" to stringProp(),
+                        "nameMatch" to stringProp(),
+                        "class" to stringProp(),
+                        "package" to stringProp(),
+                        "excludePackage" to stringProp(),
+                        "returnType" to stringProp(),
+                        "paramTypes" to stringArrayProp(nullableItems = true),
+                        "paramCount" to intProp(),
+                        "protoShorty" to stringProp(),
+                        "modifiers" to intProp(),
+                        "modifiersExact" to boolProp(),
+                        "accessFlags" to intProp(),
+                        "accessFlagsExact" to boolProp(),
+                        "annotation" to stringProp(),
+                        "callerClass" to stringProp(),
+                        "callerMethod" to stringProp(),
+                        "invokeClass" to stringProp(),
+                        "invokeMethod" to stringProp(),
+                        "usingFieldName" to stringProp(),
+                        "usingFieldType" to stringProp(),
+                        "usingFieldUsage" to stringProp(),
+                        "usingStrings" to stringArrayProp(),
+                        "usingStringMatch" to stringProp(),
+                        "excludeStrings" to stringArrayProp(),
+                        "usingNumbers" to numberArrayProp(),
+                        "opNames" to stringArrayProp(),
+                        "first" to boolProp(),
+                        "limit" to intProp(),
+                    ),
+            ),
         description =
             "按结构或字符串锚点搜方法（DexKit）。至少需要一个条件，或用 class / package / excludePackage 限定范围。" +
                 "参数：name（配 nameMatch）、class（声明类，全等；与 package 同时给时二者为 AND）、" +
@@ -184,6 +259,20 @@ internal fun Server.registerDevtoolSearchTools() {
 
     addDouMcpTool(
         name = "batchFindUsingStrings",
+        schema =
+            inputSchema(
+                properties =
+                    mapOf(
+                        "groups" to objectProp(),
+                        "target" to stringProp(),
+                        "class" to stringProp(),
+                        "package" to stringProp(),
+                        "excludePackage" to stringProp(),
+                        "stringMatch" to stringProp(),
+                        "limit" to intProp(),
+                    ),
+                required = listOf("groups"),
+            ),
         description =
             "一次检索多组字符串锚点（DexKit 批量接口，比逐组查询快）。**组内为 AND**（目标需用到该组全部字符串），不同组互相独立。" +
                 "参数：groups（对象：组名 → 字符串数组）、target（class(默认)/method）、class（可选，限定在某类内）、" +
