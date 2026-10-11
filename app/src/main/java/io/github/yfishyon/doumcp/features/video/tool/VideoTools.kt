@@ -55,6 +55,40 @@ internal fun Server.registerVideoTools() {
     }
 
     addDouMcpTool(
+        name = "getUserLikedAwemes",
+        description =
+            "获取某个用户「喜欢」列表（TA 点过赞的作品，分页）。参数 uidOrSecUid 支持 uid 或 secUid；" +
+                "cursor（可选，默认 0）翻页游标，传上页返回的 nextCursor；count（可选，默认 10）每页条数。需要登录",
+    ) { request ->
+        val uidOrSecUid =
+            request.arguments.stringArg("uidOrSecUid")
+                ?: return@addDouMcpTool errorResult("缺少 uidOrSecUid 参数")
+        val cursor = request.arguments.stringArg("cursor")?.toLongOrNull() ?: 0L
+        val count = request.arguments.intArg("count", 10)
+
+        withContext(Dispatchers.IO) {
+            toolCall { UserAwemeBridge.getLikedAwemesJson(uidOrSecUid, cursor, count) }
+        }
+    }
+
+    addDouMcpTool(
+        name = "getUserCollectedAwemes",
+        description =
+            "获取某个用户「收藏」列表（分页）。参数 uidOrSecUid 支持 uid 或 secUid；" +
+                "cursor（可选，默认 0）翻页游标，传上页返回的 nextCursor；count（可选，默认 10）每页条数。需要登录",
+    ) { request ->
+        val uidOrSecUid =
+            request.arguments.stringArg("uidOrSecUid")
+                ?: return@addDouMcpTool errorResult("缺少 uidOrSecUid 参数")
+        val cursor = request.arguments.stringArg("cursor")?.toLongOrNull() ?: 0L
+        val count = request.arguments.intArg("count", 10)
+
+        withContext(Dispatchers.IO) {
+            toolCall { UserAwemeBridge.getCollectedAwemesJson(uidOrSecUid, cursor, count) }
+        }
+    }
+
+    addDouMcpTool(
         name = "deleteAweme",
         description =
             "批量删除自己发布的作品（逐条删除，单条失败不影响其余）。" +

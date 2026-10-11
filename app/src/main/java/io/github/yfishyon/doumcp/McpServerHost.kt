@@ -14,6 +14,7 @@ import io.github.yfishyon.doumcp.features.devtool.tool.registerDevtoolRuntimeToo
 import io.github.yfishyon.doumcp.features.devtool.tool.registerDevtoolSearchTools
 import io.github.yfishyon.doumcp.features.devtool.tool.registerDevtoolWatchTools
 import io.github.yfishyon.doumcp.features.im.tool.registerImTools
+import io.github.yfishyon.doumcp.features.interact.tool.registerInteractTools
 import io.github.yfishyon.doumcp.features.notice.tool.registerNoticeTools
 import io.github.yfishyon.doumcp.features.publish.tool.registerPublishTools
 import io.github.yfishyon.doumcp.features.search.tool.registerSearchTools
@@ -355,6 +356,7 @@ object McpServerHost {
                 "account" to { registerAccountTools() },
                 "video" to { registerVideoTools() },
                 "im" to { registerImTools() },
+                "interact" to { registerInteractTools() },
                 "comment" to { registerCommentTools() },
                 "comment_publish" to { registerCommentPublishTools() },
                 "publish" to { registerPublishTools() },

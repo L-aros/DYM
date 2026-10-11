@@ -4,22 +4,25 @@ import io.github.yfishyon.doumcp.core.ApiPrefix
 import io.github.yfishyon.doumcp.core.HostRuntime
 import io.github.yfishyon.doumcp.core.Reflect
 import io.github.yfishyon.doumcp.features.account.bridge.AccountBridge
-import io.github.yfishyon.doumcp.features.video.bridge.VideoBridge
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * 用户作品列表桥：uid/secUid → 该账号的作品列表（分页）。
+ * 用户作品列表桥：uid/secUid → 该账号的作品 / 喜欢 / 收藏列表（分页）。
  *
  * 请求构造逆向自用户主页数据源（全等证据）：
- * `API_URL_PREFIX_SI + /aweme/v1/aweme/post/`，参数 sec_user_id（或 user_id）、
- * max_cursor、count、source、publish_video_strategy_type、is_other、need_time_list、page_from。
+ * `API_URL_PREFIX_SI + /aweme/v1/aweme/post/`（作品）、`/aweme/v1/aweme/favorite/`（喜欢）、
+ * `/aweme/v1/aweme/listcollection/`（收藏）；参数 sec_user_id（或 user_id）、max_cursor、count 等。
  * 网络走抖音自己的同步请求入口（带完整签名），响应是作品列表模型，
  * 数据在 getItems()，翻页游标 getCursor()、是否还有 getHasMore()。
  */
 object UserAwemeBridge {
     private const val API_CLASS = "com.ss.android.ugc.aweme.app.api.Api"
     private const val FEED_ITEM_LIST = "com.ss.android.ugc.aweme.feed.model.FeedItemList"
+
+    private const val POST_PATH = "/aweme/v1/aweme/post/"
+    private const val FAVORITE_PATH = "/aweme/v1/aweme/favorite/"
+    private const val COLLECTION_PATH = "/aweme/v1/aweme/listcollection/"
 
     /**
      * 获取用户发布的作品列表（分页，阻塞走网络，调用方负责后台线程）。
@@ -34,11 +37,63 @@ object UserAwemeBridge {
         count: Int,
         keyword: String = "",
     ): String {
-        if (AccountBridge.getCurrentUserId().isNullOrBlank()) {
-            return errorJson("未登录")
-        }
+        if (AccountBridge.getCurrentUserId().isNullOrBlank()) return errorJson("未登录")
         if (uidOrSecUid.isBlank()) return errorJson("参数为空")
+        val url =
+            buildListUrl(POST_PATH, uidOrSecUid, cursor, count) +
+                "&publish_video_strategy_type=2&is_other=1&need_time_list=0&page_from=2&location_permission=0"
+        return feedListJson(url, keyword)
+    }
 
+    /** 获取用户的「喜欢」列表（该账号点过赞的作品，分页）。 */
+    fun getLikedAwemesJson(
+        uidOrSecUid: String,
+        cursor: Long,
+        count: Int,
+    ): String = listJson(FAVORITE_PATH, uidOrSecUid, cursor, count)
+
+    /** 获取用户的「收藏」列表（分页）。 */
+    fun getCollectedAwemesJson(
+        uidOrSecUid: String,
+        cursor: Long,
+        count: Int,
+    ): String = listJson(COLLECTION_PATH, uidOrSecUid, cursor, count)
+
+    private fun listJson(
+        path: String,
+        uidOrSecUid: String,
+        cursor: Long,
+        count: Int,
+    ): String {
+        if (AccountBridge.getCurrentUserId().isNullOrBlank()) return errorJson("未登录")
+        if (uidOrSecUid.isBlank()) return errorJson("参数为空")
+        return feedListJson(buildListUrl(path, uidOrSecUid, cursor, count), "")
+    }
+
+    private fun buildListUrl(
+        path: String,
+        uidOrSecUid: String,
+        cursor: Long,
+        count: Int,
+    ): String =
+        buildString {
+            append(profilePrefix())
+            append(path)
+            append("?")
+            if (uidOrSecUid.startsWith("MS4wLj")) {
+                append("sec_user_id=").append(uidOrSecUid)
+            } else {
+                append("user_id=").append(uidOrSecUid)
+            }
+            append("&max_cursor=").append(cursor)
+            append("&count=").append(count)
+            append("&source=0")
+        }
+
+    private fun feedListJson(
+        url: String,
+        keyword: String,
+    ): String {
         // 同步请求入口：Api 类里静态方法，签名 (String url, Class, String, 回调容器)
         val apiClass = Class.forName(API_CLASS, false, HostRuntime.requireClassLoader())
         val requestMethod =
@@ -55,26 +110,6 @@ object UserAwemeBridge {
 
         val callbackType = requestMethod.parameterTypes[3]
         val callback = callbackType.getDeclaredConstructor().newInstance()
-
-        val isSecUid = uidOrSecUid.startsWith("MS4wLj")
-        val url =
-            buildString {
-                append(profilePrefix())
-                append("/aweme/v1/aweme/post/?")
-                if (isSecUid) {
-                    append("sec_user_id=").append(uidOrSecUid)
-                } else {
-                    append("user_id=").append(uidOrSecUid)
-                }
-                append("&max_cursor=").append(cursor)
-                append("&count=").append(count)
-                append("&source=0")
-                append("&publish_video_strategy_type=2")
-                append("&is_other=1")
-                append("&need_time_list=0")
-                append("&page_from=2")
-                append("&location_permission=0")
-            }
 
         val feedItemList =
             requestMethod.invoke(null, url, HostRuntime.requireClassLoader().loadClass(FEED_ITEM_LIST), null, callback)

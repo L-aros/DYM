@@ -6,6 +6,7 @@ import io.github.yfishyon.doumcp.core.ResolvedCache
 import io.github.yfishyon.doumcp.features.account.resolver.AccountResolver
 import io.github.yfishyon.doumcp.features.comment.resolver.CommentResolver
 import io.github.yfishyon.doumcp.features.im.resolver.ImResolver
+import io.github.yfishyon.doumcp.features.interact.resolver.InteractResolver
 import io.github.yfishyon.doumcp.features.notice.resolver.NoticeResolver
 import io.github.yfishyon.doumcp.features.publish.resolver.PublishResolver
 import io.github.yfishyon.doumcp.features.search.resolver.SearchResolver
@@ -36,6 +37,7 @@ object FeatureWarmup {
             "notice_fetch" to { NoticeResolver.resolveFetchNoticeMethod() },
             "notice_api_holder" to { NoticeResolver.resolveApiHolderClass() },
             "notice_group_map" to { NoticeResolver.resolveGroupMapMethod() },
+            "interact_digg" to { InteractResolver.resolveDiggMethod() },
         )
 
     /** 无适配记录时全量定位并写记录；定位结果走 [ResolvedCache]，按模块版本 + 宿主版本隔离。 */
