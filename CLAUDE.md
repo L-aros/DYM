@@ -100,6 +100,19 @@ app/src/main/java/io/github/yfishyon/doumcp/
   再把每张图摊成六个并行逗号分隔串（地址、宽、高、格式、来源），六串按同一顺序对应；
   定位信息仅在相册定位开关打开时才带，模块不带
 
+## 互动（features/interact）
+
+- **点赞 / 取消点赞**：宿主把端点（`commit/item/digg`）与参数写在**一个跨平台网络封装方法**里（类名混淆，
+  靠完整端点串 `https://aweme.snssdk.com/aweme/v1/commit/item/digg/` 全等定位）；动作位 `1` 赞 / `0` 取消。
+  调它比手拼请求省事——公共参数与签名由宿主自己补齐
+- **收藏 / 取消收藏**：宿主有个**未混淆**的 Retrofit 接口（`AwemeCollectRequester$IApi`，端点
+  `/aweme/v1/aweme/collect/`，参数全是 `@Query`）；动作位 `1` 收藏 / `0` 取消，`aweme_type` 必须取作品的
+  真实类型（从作品详情解析）。实例用 `HostRetrofit` 生成；返回值是**宿主改过名的 RxJava `Single`**——
+  订阅方法改名了，要**按参数类型（`SingleObserver`）定位**，不能用 `blockingGet`
+- **喜欢 / 收藏列表**：复用作品列表入口，端点 `/aweme/v1/aweme/favorite/`（喜欢）、`/aweme/v1/aweme/listcollection/`（收藏）
+- 通用设施：`core/HostRetrofit`（宿主 Retrofit 工厂：服务入口 → 按主站域名建 Retrofit → 生成接口代理）、
+  `core/SuspendInvoker`（阻塞调宿主挂起方法）
+
 ## 数据库工具（features/database）
 
 - 工具：listDatabases / listTables / queryDatabase / executeDatabaseStatement（camelCase 统一）
