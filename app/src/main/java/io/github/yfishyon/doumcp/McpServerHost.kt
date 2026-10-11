@@ -46,6 +46,25 @@ import kotlinx.serialization.json.jsonObject
  * 服务启动整体在自有后台线程执行，不阻塞宿主主线程。
  */
 object McpServerHost {
+    /** 健康自检周期（连续失败时按退避放大） */
+    private const val PROBE_INTERVAL_MS = 20_000L
+
+    /** 探针连接超时：loopback 为亚毫秒级，1 秒给足余量 */
+    private const val PROBE_CONNECT_TIMEOUT_MS = 1_000
+
+    /** 探针读超时：GET /api 正常在毫秒级，读满即判定服务卡死 */
+    private const val PROBE_READ_TIMEOUT_MS = 2_000
+
+    /** 重建时旧引擎的排空时间与停止总超时 */
+    private const val ENGINE_STOP_GRACE_MS = 500L
+    private const val ENGINE_STOP_TIMEOUT_MS = 3_000L
+
+    /** 停服务时等待守护线程退出的上限 */
+    private const val WATCHDOG_JOIN_MS = 2_000L
+
+    /** 连续失败时自检间隔的封顶 */
+    private const val MAX_BACKOFF_MS = 300_000L
+
     @Volatile
     private var started = false
 
@@ -56,6 +75,14 @@ object McpServerHost {
 
     /** 启动任务队列（daemon，热重载时随 stop 一并关停） */
     private var launcher: java.util.concurrent.ExecutorService? = null
+
+    /** 健康守护线程；以引用相等作为存活判据，stop() 置 null 并 interrupt */
+    @Volatile
+    private var watchdog: Thread? = null
+
+    /** 服务实际使用的鉴权密钥（探针按它构造请求；改设置后需重启才变） */
+    @Volatile
+    private var activeToken = ""
 
     /**
      * 启动服务（幂等）。启动流程投递到自有后台线程执行：
@@ -71,25 +98,137 @@ object McpServerHost {
                             Thread(runnable).apply { isDaemon = true }
                         }.also { launcher = it }
             val seq = ++launchSeq
-            exec.execute { startBlocking(port, seq) }
+            exec.execute { startBlocking(port, seq, notify = true) }
+        }
+        // 服务被要求启动即进入自检：即使首次启动失败（端口被占），守护线程也会持续重试
+        ensureWatchdog(port)
+    }
+
+    /** 停止服务并给排空时间（热重载前调用）；未执行的启动任务与守护线程一并关停 */
+    fun stop() {
+        val (watch, exec, server) =
+            synchronized(this) {
+                launchSeq++
+                val w = watchdog
+                watchdog = null
+                val l = launcher
+                launcher = null
+                val e = engine
+                engine = null
+                started = false
+                Triple(w, l, e)
+            }
+        // 阻塞操作留在锁外：守护线程可能正持锁执行 startBlocking，锁内等待会互等
+        watch?.interrupt()
+        runCatching { watch?.join(WATCHDOG_JOIN_MS) }
+        exec?.shutdownNow()
+        runCatching { server?.stop(1_000, 5_000) }
+    }
+
+    /** 确保健康守护线程在跑（幂等）；随服务启动派生，随 stop() 关停 */
+    private fun ensureWatchdog(port: Int) {
+        synchronized(this) {
+            if (watchdog?.isAlive == true) return
+            val thread = Thread({ watchdogLoop(port) }, "doumcp-watchdog")
+            thread.isDaemon = true
+            // 先赋值再启动：循环首行以 watchdog === 当前线程 判定自身是否仍有效
+            watchdog = thread
+            thread.start()
         }
     }
 
-    /** 停止服务并给排空时间（热重载前调用）；未执行的启动任务一并取消 */
-    fun stop() {
-        synchronized(this) {
-            launchSeq++
-            launcher?.shutdownNow()
-            launcher = null
-            runCatching { engine?.stop(1_000, 5_000) }
-            engine = null
-            started = false
+    /**
+     * 健康自检循环：探针不响即重建服务。
+     *
+     * 连续失败时按 20s×2^(n-1) 放大间隔（封顶 300s），避免长期不可恢复时反复重建；恢复即复位。
+     */
+    private fun watchdogLoop(port: Int) {
+        val self = Thread.currentThread()
+        var failStreak = 0
+        var delayMs = PROBE_INTERVAL_MS
+        while (watchdog === self && !self.isInterrupted) {
+            try {
+                Thread.sleep(delayMs)
+            } catch (_: InterruptedException) {
+                return
+            }
+            if (watchdog !== self) return
+            if (probe(port)) {
+                failStreak = 0
+                delayMs = PROBE_INTERVAL_MS
+                continue
+            }
+            failStreak++
+            ModLog.w("MCP：健康检查失败（连续 $failStreak 次），重建服务")
+            restart(port)
+            // 重建后立即确认：成功则马上回到常规间隔，失败才进入退避
+            if (probe(port)) {
+                failStreak = 0
+                delayMs = PROBE_INTERVAL_MS
+                continue
+            }
+            delayMs = backoffMs(failStreak)
         }
+    }
+
+    /** 连续失败 n 次时的自检间隔：20 / 40 / 80 / 160 / 300 秒 */
+    private fun backoffMs(streak: Int): Long {
+        val shift = (streak - 1).coerceIn(0, 4)
+        return (PROBE_INTERVAL_MS shl shift).coerceAtMost(MAX_BACKOFF_MS)
+    }
+
+    /**
+     * 探针：裸 Socket 发一个最小 GET /api，读首行判 200。
+     *
+     * 走完整 HTTP 链路（accept → 鉴权 → 路由 → 响应），因此能测出「端口在听但处理链卡死」：
+     * 连接失败或读超时都判为不健康。用裸 Socket 是为绕开明文流量策略并精确控制读超时。
+     */
+    private fun probe(port: Int): Boolean =
+        runCatching {
+            java.net.Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress("127.0.0.1", port), PROBE_CONNECT_TIMEOUT_MS)
+                socket.soTimeout = PROBE_READ_TIMEOUT_MS
+                val token = activeToken
+                val request =
+                    buildString {
+                        append("GET /api HTTP/1.1\r\n")
+                        append("Host: 127.0.0.1\r\n")
+                        if (token.isNotEmpty()) append("Authorization: Bearer $token\r\n")
+                        append("Connection: close\r\n\r\n")
+                    }
+                socket.getOutputStream().apply {
+                    write(request.toByteArray(Charsets.US_ASCII))
+                    flush()
+                }
+                val statusLine = socket.getInputStream().bufferedReader().readLine()
+                statusLine != null && statusLine.contains(" 200")
+            }
+        }.getOrDefault(false)
+
+    /**
+     * 重建服务：拆旧引擎后复用启动流程。
+     *
+     * 不调用 stop()——它会关停任务队列并 interrupt 调用线程，从看门狗里调会自杀。
+     * 靠 launchSeq 与守护线程引用作废并发期间的 stop()（热重载），避免复活已停的服务。
+     */
+    private fun restart(port: Int) {
+        val (old, seq) =
+            synchronized(this) {
+                val e = engine
+                engine = null
+                started = false
+                e to ++launchSeq
+            }
+        runCatching { old?.stop(ENGINE_STOP_GRACE_MS, ENGINE_STOP_TIMEOUT_MS) }
+            .onFailure { ModLog.w("MCP：旧引擎停止异常", it) }
+        if (watchdog !== Thread.currentThread()) return
+        startBlocking(port, seq, notify = false)
     }
 
     private fun startBlocking(
         port: Int,
         seq: Long,
+        notify: Boolean,
     ) {
         // 端口预检含重试等待，放在锁外，避免阻塞并发的 start()/stop()
         var portFree = false
@@ -113,7 +252,7 @@ object McpServerHost {
         synchronized(this) {
             if (started || seq != launchSeq) return
             try {
-                startInternal(port)
+                startInternal(port, notify)
                 started = true
             } catch (t: Throwable) {
                 ModLog.e("MCP：服务启动失败", t)
@@ -121,7 +260,10 @@ object McpServerHost {
         }
     }
 
-    private fun startInternal(port: Int) {
+    private fun startInternal(
+        port: Int,
+        notify: Boolean,
+    ) {
         val context =
             io.github.yfishyon.doumcp.core.HostRuntime
                 .requireContext()
@@ -193,7 +335,9 @@ object McpServerHost {
             }
         serverEngine.start(wait = false)
         engine = serverEngine
-        DouToastHelper.show(context, "抖M：服务已启动（端口 $port）")
+        activeToken = token
+        // 自愈重建不弹提示（避免故障期反复弹窗），只走日志
+        if (notify) DouToastHelper.show(context, "抖M：服务已启动（端口 $port）")
         ModLog.i("MCP：服务已启动，端口 $port")
     }
 

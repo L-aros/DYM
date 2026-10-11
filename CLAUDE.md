@@ -131,3 +131,17 @@ app/src/main/java/io/github/yfishyon/doumcp/
 - onHotReloading 停服务（给排空时间）+ 停自有线程（executor shutdown，契约要求）
 - 端口预检失败重试 3 次再放弃（旧服务排空竞态）
 
+## MCP 服务自愈（McpServerHost 内）
+
+- 服务被要求启动即派生守护线程 `doumcp-watchdog`（daemon），随 `stop()` 关停；**不依赖 started**，
+  首次启动失败（端口被占）也会持续重试
+- 探针：裸 `Socket` 发最小 `GET /api`（用启动时捕获的 token），connect 1s / read 2s 超时；
+  走完整 HTTP 链路，读超时即判「端口在听但卡死」→ 重建
+- 重建走 `restart()`：拆旧引擎后复用 `startBlocking` 的端口预检与 launchSeq 守卫，
+  **绝不调用 `stop()`**（会关停队列并 interrupt 调用线程）
+- 连续失败按 20/40/80/160/300s 退避，重建成功即刻复位；重建不弹 toast（只记日志）
+- `stop()` 的阻塞操作（interrupt/join/engine.stop）一律在**锁外**，避免与守护线程抢锁互等
+- 重建会丢弃全部 MCP 会话，客户端需重新 initialize
+- **不给全局「在飞请求」设卡死阈值**：发布/上传类工具合法阻塞 180s（`PublishUploader` /
+  `CommentImageUploader` 的 TIMEOUT_MS），阈值低于 210s 会误杀正常发布
+
